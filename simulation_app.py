@@ -420,7 +420,7 @@ class SimulationApp:
     def refresh_constants_list(self):
         """Refresh the constants listbox."""
         self.constants_listbox.delete(0, tk.END)
-        for name, value in sorted(self.constants.items()):
+        for name, value in self.constants.items():
             self.constants_listbox.insert(tk.END, f"{name} = {value}")
     
     def setup_data_input_panel(self, parent: ttk.LabelFrame):
@@ -772,10 +772,18 @@ class SimulationApp:
             # Load simulation parameters
             params = root.find("SimulationParams")
             if params:
-                self.start_time.set(params.get("StartTime", "0.0"))
-                self.end_time.set(params.get("EndTime", "10.0"))
-                self.time_step.set(params.get("TimeStep", "0.1"))
-                self.work_directory.set(params.get("WorkDirectory", ""))
+                start_val = params.get("StartTime", "")
+                end_val = params.get("EndTime", "")
+                step_val = params.get("TimeStep", "")
+                work_dir_val = params.get("WorkDirectory", "")
+                if start_val:
+                    self.start_time.set(start_val)
+                if end_val:
+                    self.end_time.set(end_val)
+                if step_val:
+                    self.time_step.set(step_val)
+                if work_dir_val:
+                    self.work_directory.set(work_dir_val)
             
             # Load constants
             constants_elem = root.find("Constants")
@@ -792,9 +800,16 @@ class SimulationApp:
             if blocks_elem:
                 for block_elem in blocks_elem.findall("ControlFuncBlock"):
                     block = ControlFunctionBlock.from_xml(block_elem)
-                    self.blocks.append(block)
+                    # Process arguments to detect Time/Dt types
                     for func in block.control_functions:
+                        for arg in func.arguments:
+                            long_name = arg.long_name.strip()
+                            if long_name == "Time":
+                                arg.ref_type = "t"
+                            elif long_name == "Dt":
+                                arg.ref_type = "dt"
                         self.func_registry[func.name] = func
+                    self.blocks.append(block)
             
             self.refresh_tree()
             self.status_var.set(f"Loaded from: {filename}")
@@ -813,6 +828,23 @@ class SimulationApp:
                 raise ValueError("Time step must be positive")
             if end_time <= start_time:
                 raise ValueError("End time must be greater than start time")
+            
+            # Check for missing data for object-type arguments
+            missing_data = []
+            for block in self.blocks:
+                for func in block.control_functions:
+                    for arg in func.arguments:
+                        if arg.ref_type == "object" and not arg.data_values:
+                            # Check if it's a reference to another control function
+                            if "ControlFunc" not in arg.long_name:
+                                missing_data.append((func.name, arg.short_name))
+            
+            if missing_data:
+                error_msg = 'Для запуска укажите данные для следующих аргументов:\n\n'
+                for func_name, arg_name in missing_data:
+                    error_msg += f'"{func_name}"->"{arg_name}"\n'
+                messagebox.showerror("Missing Data", error_msg)
+                return
             
             # Determine output directory
             output_dir = self.work_directory.get().strip()
