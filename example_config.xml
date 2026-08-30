@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SimulationConfig>
+  <SimulationParams StartTime="0.0" EndTime="10.0" TimeStep="0.1" SaveDate="2025-01-01T00:00:00"/>
+  <ControlFuncBlocks>
+    <ControlFuncBlock Name="ReactorSignals">
+      <ControlFunc Name="CheckSignalToShutDownReactor" Func="0.0" Formula="((t &gt; TimeStadyState) and (StartD_Pressure &gt; GPRPres)) ? 1.0 : gotSignal" OutFile="REACTORSIGNALS_SignalToShutDownReactor.dat">
+        <Arg ShortName="t" LongName="Time"/>
+        <Arg ShortName="TimeStadyState" LongName="TimeStadyState"/>
+        <Arg ShortName="StartD_Pressure" LongName="StartD_Pressure"/>
+        <Arg ShortName="GPRPres" Module="Hydra" LongName="Chamber(VOL_GPR_FULL).Pressure()"/>
+        <Arg ShortName="gotSignal" LongName="ControlFunc(IsReactorShutDown).Func"/>
+      </ControlFunc>
+      <ControlFunc Name="IsReactorShutDown" Func="0.0" Formula="0.0" OutFile="REACTORSIGNALS_IsReactorShutDown.dat">
+        <Arg ShortName="t" LongName="Time"/>
+      </ControlFunc>
+    </ControlFuncBlock>
+  </ControlFuncBlocks>
+</SimulationConfig>
