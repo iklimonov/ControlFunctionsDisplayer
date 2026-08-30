@@ -110,7 +110,8 @@ class ControlFunction:
     def add_argument(self, arg: Argument):
         self.arguments.append(arg)
     
-    def evaluate(self, t: float, dt: float, func_registry: Dict[str, 'ControlFunction']) -> float:
+    def evaluate(self, t: float, dt: float, func_registry: Dict[str, 'ControlFunction'], 
+                 constants: Optional[Dict[str, float]] = None) -> float:
         """Evaluate the formula at given time."""
         if not self.formula:
             return self.initial_value
@@ -121,6 +122,11 @@ class ControlFunction:
             'dt': dt,
             'math': math,
         }
+        
+        # Add constants to context
+        if constants:
+            for name, value in constants.items():
+                context[name] = value
         
         # Add arguments to context
         for arg in self.arguments:
@@ -250,6 +256,10 @@ class SimulationApp:
         self.start_time = tk.StringVar(value="0.0")
         self.end_time = tk.StringVar(value="10.0")
         self.time_step = tk.StringVar(value="0.1")
+        self.work_directory = tk.StringVar(value="")
+        
+        # Constants storage
+        self.constants: Dict[str, float] = {}
         
         # Setup UI
         self.setup_ui()
@@ -293,6 +303,38 @@ class SimulationApp:
         self.step_entry = ttk.Entry(time_frame, textvariable=self.time_step, width=20)
         self.step_entry.grid(row=2, column=1, padx=5, pady=5)
         
+        # Work directory frame
+        dir_frame = ttk.LabelFrame(parent, text="Work Directory")
+        dir_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Label(dir_frame, text="Directory:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.dir_entry = ttk.Entry(dir_frame, textvariable=self.work_directory, width=30)
+        self.dir_entry.grid(row=0, column=1, padx=5, pady=5)
+        ttk.Button(dir_frame, text="Browse", command=self.browse_work_directory).grid(row=0, column=2, padx=5, pady=5)
+        
+        # Constants frame
+        const_frame = ttk.LabelFrame(parent, text="Constants")
+        const_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Constants listbox with scrollbar
+        const_list_frame = ttk.Frame(const_frame)
+        const_list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        const_scroll = ttk.Scrollbar(const_list_frame)
+        const_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.constants_listbox = tk.Listbox(const_list_frame, yscrollcommand=const_scroll.set)
+        self.constants_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        const_scroll.config(command=self.constants_listbox.yview)
+        
+        # Constants buttons
+        const_btn_frame = ttk.Frame(const_frame)
+        const_btn_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Button(const_btn_frame, text="Add Constant", command=self.add_constant).pack(side=tk.LEFT, padx=2)
+        ttk.Button(const_btn_frame, text="Edit Constant", command=self.edit_constant).pack(side=tk.LEFT, padx=2)
+        ttk.Button(const_btn_frame, text="Delete Constant", command=self.delete_constant).pack(side=tk.LEFT, padx=2)
+        
         # Buttons frame
         btn_frame = ttk.Frame(parent)
         btn_frame.pack(fill=tk.X, padx=10, pady=10)
@@ -313,6 +355,73 @@ class SimulationApp:
         self.status_var = tk.StringVar(value="Ready")
         status_label = ttk.Label(parent, textvariable=self.status_var, relief=tk.SUNKEN)
         status_label.pack(fill=tk.X, padx=10, pady=5)
+    
+    def browse_work_directory(self):
+        """Browse for work directory."""
+        directory = filedialog.askdirectory(title="Select Work Directory")
+        if directory:
+            self.work_directory.set(directory)
+    
+    def add_constant(self):
+        """Add a new constant."""
+        dialog = ConstantDialog(self.root, "Add Constant")
+        if dialog.result:
+            name = dialog.result.get("name", "")
+            value = dialog.result.get("value", "0.0")
+            if name:
+                try:
+                    self.constants[name] = float(value)
+                    self.refresh_constants_list()
+                    self.status_var.set(f"Added constant: {name} = {value}")
+                except ValueError:
+                    messagebox.showerror("Error", "Value must be a number")
+    
+    def edit_constant(self):
+        """Edit selected constant."""
+        selection = self.constants_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a constant to edit.")
+            return
+        
+        item = self.constants_listbox.get(selection[0])
+        parts = item.split("=")
+        if len(parts) >= 2:
+            name = parts[0].strip()
+            value = parts[1].strip()
+            dialog = ConstantDialog(self.root, "Edit Constant", {"name": name, "value": value})
+            if dialog.result:
+                new_name = dialog.result.get("name", "")
+                new_value = dialog.result.get("value", "0.0")
+                if new_name:
+                    try:
+                        del self.constants[name]
+                        self.constants[new_name] = float(new_value)
+                        self.refresh_constants_list()
+                        self.status_var.set(f"Updated constant: {new_name} = {new_value}")
+                    except ValueError:
+                        messagebox.showerror("Error", "Value must be a number")
+    
+    def delete_constant(self):
+        """Delete selected constant."""
+        selection = self.constants_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a constant to delete.")
+            return
+        
+        item = self.constants_listbox.get(selection[0])
+        parts = item.split("=")
+        if len(parts) >= 1:
+            name = parts[0].strip()
+            if name in self.constants:
+                del self.constants[name]
+                self.refresh_constants_list()
+                self.status_var.set(f"Deleted constant: {name}")
+    
+    def refresh_constants_list(self):
+        """Refresh the constants listbox."""
+        self.constants_listbox.delete(0, tk.END)
+        for name, value in sorted(self.constants.items()):
+            self.constants_listbox.insert(tk.END, f"{name} = {value}")
     
     def setup_data_input_panel(self, parent: ttk.LabelFrame):
         """Setup the right data input panel with hierarchical tree view."""
@@ -609,7 +718,15 @@ class SimulationApp:
             params.set("StartTime", self.start_time.get())
             params.set("EndTime", self.end_time.get())
             params.set("TimeStep", self.time_step.get())
+            params.set("WorkDirectory", self.work_directory.get())
             params.set("SaveDate", datetime.now().isoformat())
+            
+            # Save constants
+            constants_elem = ET.SubElement(root, "Constants")
+            for name, value in self.constants.items():
+                const = ET.SubElement(constants_elem, "Constant")
+                const.set("Name", name)
+                const.set("Value", str(value))
             
             # Save blocks
             blocks_elem = ET.SubElement(root, "ControlFuncBlocks")
@@ -650,6 +767,7 @@ class SimulationApp:
             # Clear current data
             self.blocks = []
             self.func_registry = {}
+            self.constants = {}
             
             # Load simulation parameters
             params = root.find("SimulationParams")
@@ -657,6 +775,17 @@ class SimulationApp:
                 self.start_time.set(params.get("StartTime", "0.0"))
                 self.end_time.set(params.get("EndTime", "10.0"))
                 self.time_step.set(params.get("TimeStep", "0.1"))
+                self.work_directory.set(params.get("WorkDirectory", ""))
+            
+            # Load constants
+            constants_elem = root.find("Constants")
+            if constants_elem:
+                for const_elem in constants_elem.findall("Constant"):
+                    name = const_elem.get("Name", "")
+                    value = const_elem.get("Value", "0.0")
+                    if name:
+                        self.constants[name] = float(value)
+                self.refresh_constants_list()
             
             # Load blocks
             blocks_elem = root.find("ControlFuncBlocks")
@@ -685,12 +814,26 @@ class SimulationApp:
             if end_time <= start_time:
                 raise ValueError("End time must be greater than start time")
             
+            # Determine output directory
+            output_dir = self.work_directory.get().strip()
+            if not output_dir:
+                output_dir = os.getcwd()
+            
             # Open output files
             output_files = {}
             for block in self.blocks:
                 for func in block.control_functions:
                     if func.output_file:
-                        output_files[func.name] = open(func.output_file, 'w')
+                        # If output file is relative, prepend work directory
+                        if not os.path.isabs(func.output_file):
+                            output_path = os.path.join(output_dir, func.output_file)
+                        else:
+                            output_path = func.output_file
+                        # Ensure directory exists
+                        output_path_dir = os.path.dirname(output_path)
+                        if output_path_dir and not os.path.exists(output_path_dir):
+                            os.makedirs(output_path_dir)
+                        output_files[func.name] = open(output_path, 'w')
                         output_files[func.name].write("# Time\tValue\n")
             
             # Run simulation
@@ -706,7 +849,7 @@ class SimulationApp:
                 # Evaluate all functions
                 for block in self.blocks:
                     for func in block.control_functions:
-                        value = func.evaluate(t, dt, self.func_registry)
+                        value = func.evaluate(t, dt, self.func_registry, self.constants)
                         
                         # Write to output file
                         if func.output_file and func.name in output_files:
@@ -721,7 +864,7 @@ class SimulationApp:
                 f"Simulation completed successfully!\n"
                 f"Steps: {steps}\n"
                 f"Time range: {start_time} to {end_time}\n"
-                f"Results saved to output files.")
+                f"Results saved to output files in: {output_dir}")
         except ValueError as e:
             messagebox.showerror("Error", f"Invalid parameters:\n{str(e)}")
         except Exception as e:
@@ -893,6 +1036,47 @@ class ArgumentDialog(tk.Toplevel):
             "module": self.module_var.get(),
             "ref_type": self.ref_type_var.get(),
             "data_file": self.data_file_var.get()
+        }
+        self.destroy()
+    
+    def cancel(self):
+        self.destroy()
+
+
+class ConstantDialog(tk.Toplevel):
+    """Dialog for creating/editing a constant."""
+    
+    def __init__(self, parent, title, initial_data=None):
+        super().__init__(parent)
+        self.title(title)
+        self.result = None
+        
+        self.transient(parent)
+        self.grab_set()
+        
+        # Name
+        ttk.Label(self, text="Constant Name:").grid(row=0, column=0, padx=10, pady=5, sticky=tk.W)
+        self.name_var = tk.StringVar(value=initial_data.get("name", "") if initial_data else "")
+        ttk.Entry(self, textvariable=self.name_var, width=40).grid(row=0, column=1, padx=10, pady=5)
+        
+        # Value
+        ttk.Label(self, text="Value:").grid(row=1, column=0, padx=10, pady=5, sticky=tk.W)
+        self.value_var = tk.StringVar(value=initial_data.get("value", "0.0") if initial_data else "0.0")
+        ttk.Entry(self, textvariable=self.value_var, width=40).grid(row=1, column=1, padx=10, pady=5)
+        
+        # Buttons
+        btn_frame = ttk.Frame(self)
+        btn_frame.grid(row=2, column=0, columnspan=2, pady=20)
+        
+        ttk.Button(btn_frame, text="OK", command=self.ok).pack(side=tk.LEFT, padx=10)
+        ttk.Button(btn_frame, text="Cancel", command=self.cancel).pack(side=tk.LEFT, padx=10)
+        
+        self.wait_window(self)
+    
+    def ok(self):
+        self.result = {
+            "name": self.name_var.get(),
+            "value": self.value_var.get()
         }
         self.destroy()
     
